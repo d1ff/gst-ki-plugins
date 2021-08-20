@@ -152,10 +152,21 @@ static void gst_remap_pad_set_property(
 
     if (map_changed) {
         // TODO: Check for errors
-        cv::FileStorage fs(pad->maps, cv::FileStorage::READ);
-        fs["x"] >> pad->_mapx;
-        fs["y"] >> pad->_mapy;
-        fs.release();
+        std::vector<cv::Mat> mats;
+        if (!cv::imreadmulti(pad->maps, mats,
+                cv::IMREAD_ANYDEPTH | cv::IMREAD_UNCHANGED
+                    | cv::IMREAD_ANYCOLOR)) {
+            GST_ERROR_OBJECT(pad, ("Could not read filename %s"), (pad->maps));
+            return;
+        }
+        std::cout << mats[0].type() << std::endl;
+        if (mats.size() != 2) {
+            GST_ERROR_OBJECT(pad, ("Wrong images count"), (NULL));
+            return;
+        }
+        cv::convertMaps(mats[0], mats[1], pad->_mapx, pad->_mapy, CV_16SC2);
+        // pad->_mapx = mats[0];
+        // pad->_mapy = mats[1];
 
         pad->width = pad->_mapx.cols;
         pad->height = pad->_mapx.rows;
