@@ -488,7 +488,7 @@ static GstFlowReturn gst_remap_aggregate_frames(
             cv::Mat roi(outmat,
                 cv::Rect(compo_pad->xpos, compo_pad->ypos, compo_pad->width,
                     compo_pad->height));
-            cv::remap(frame, outmat, compo_pad->_mapx, compo_pad->_mapy,
+            cv::remap(frame, roi, compo_pad->_mapx, compo_pad->_mapy,
                 cv::INTER_LINEAR, cv::BORDER_TRANSPARENT);
             drawn_pads++;
         }
