@@ -315,8 +315,8 @@ static void gst_remap_pad_init(GstRemapPad* compo_pad)
     compo_pad->xpos = DEFAULT_PAD_XPOS;
     compo_pad->ypos = DEFAULT_PAD_YPOS;
     compo_pad->maps = "";
-    compo_pad->_mapx = cv::Mat();
-    compo_pad->_mapy = cv::Mat();
+    compo_pad->_mapx = cv::UMat();
+    compo_pad->_mapy = cv::UMat();
 }
 
 /* GstRemap */
@@ -473,6 +473,10 @@ static GstFlowReturn gst_remap_aggregate_frames(
     }
 
     outframe = &out_frame;
+    cv::Mat outmat;
+    _get_mat_from_frame(outframe, outmat);
+    cv::UMat u_outmat = outmat.getUMat(cv::ACCESS_WRITE), u_frame;
+    cv::Mat frame;
 
     GST_OBJECT_LOCK(vagg);
     for (l = GST_ELEMENT(vagg)->sinkpads; l; l = l->next) {
@@ -482,13 +486,12 @@ static GstFlowReturn gst_remap_aggregate_frames(
             = gst_video_aggregator_pad_get_prepared_frame(pad);
 
         if (prepared_frame != NULL) {
-            cv::Mat frame, outmat;
             _get_mat_from_frame(prepared_frame, frame);
-            _get_mat_from_frame(outframe, outmat);
-            cv::Mat roi(outmat,
+            u_frame = frame.getUMat(cv::ACCESS_READ);
+            cv::UMat u_roi(u_outmat,
                 cv::Rect(compo_pad->xpos, compo_pad->ypos, compo_pad->width,
                     compo_pad->height));
-            cv::remap(frame, roi, compo_pad->_mapx, compo_pad->_mapy,
+            cv::remap(u_frame, u_roi, compo_pad->_mapx, compo_pad->_mapy,
                 cv::INTER_LINEAR, cv::BORDER_TRANSPARENT);
             drawn_pads++;
         }

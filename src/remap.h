@@ -56,7 +56,7 @@ struct _GstRemapPad {
     const gchar* maps;
 
     /* maps */
-    cv::Mat _mapx, _mapy;
+    cv::UMat _mapx, _mapy;
 };
 
 G_END_DECLS
