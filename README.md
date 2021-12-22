@@ -3,7 +3,7 @@ KnotInspector GStreamer plugins repository
 # Dependencies
 
 * GStreamer 1.18
-* OpenCV 4.5.1
+* OpenCV 4.5.4
 
 # Usage
 Configure and build all plugins:
