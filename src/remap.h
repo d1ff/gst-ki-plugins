@@ -40,6 +40,7 @@ G_DECLARE_FINAL_TYPE(
  */
 struct _GstRemap {
     GstVideoAggregator videoaggregator;
+    gboolean use_umat;
 };
 
 /**
@@ -56,7 +57,8 @@ struct _GstRemapPad {
     const gchar* maps;
 
     /* maps */
-    cv::UMat _mapx, _mapy;
+    cv::Mat _mapx, _mapy;
+    cv::UMat u_mapx, u_mapy;
 };
 
 G_END_DECLS

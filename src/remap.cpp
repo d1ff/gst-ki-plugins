@@ -159,14 +159,13 @@ static void gst_remap_pad_set_property(
             GST_ERROR_OBJECT(pad, ("Could not read filename %s"), (pad->maps));
             return;
         }
-        std::cout << mats[0].type() << std::endl;
         if (mats.size() != 2) {
             GST_ERROR_OBJECT(pad, ("Wrong images count"), (NULL));
             return;
         }
         cv::convertMaps(mats[0], mats[1], pad->_mapx, pad->_mapy, CV_16SC2);
-        // pad->_mapx = mats[0];
-        // pad->_mapy = mats[1];
+        pad->u_mapx = pad->_mapx.getUMat(cv::ACCESS_READ);
+        pad->u_mapy = pad->_mapy.getUMat(cv::ACCESS_READ);
 
         pad->width = pad->_mapx.cols;
         pad->height = pad->_mapx.rows;
@@ -303,8 +302,6 @@ static void gst_remap_pad_class_init(GstRemapPadClass* klass)
         g_param_spec_string("maps", "Maps", "File path to maps", "",
             GParamFlags(G_PARAM_READWRITE | GST_PARAM_CONTROLLABLE
                 | G_PARAM_STATIC_STRINGS)));
-    // vaggpadclass->prepare_frame
-    //    = GST_DEBUG_FUNCPTR(gst_remap_pad_prepare_frame);
 
     vaggcpadclass->create_conversion_info
         = GST_DEBUG_FUNCPTR(gst_remap_pad_create_conversion_info);
@@ -315,13 +312,17 @@ static void gst_remap_pad_init(GstRemapPad* compo_pad)
     compo_pad->xpos = DEFAULT_PAD_XPOS;
     compo_pad->ypos = DEFAULT_PAD_YPOS;
     compo_pad->maps = "";
-    compo_pad->_mapx = cv::UMat();
-    compo_pad->_mapy = cv::UMat();
+    compo_pad->_mapx = cv::Mat();
+    compo_pad->_mapy = cv::Mat();
+    compo_pad->u_mapx = cv::UMat();
+    compo_pad->u_mapy = cv::UMat();
 }
 
 /* GstRemap */
+#define DEFAULT_USE_UMAT FALSE
 enum {
     PROP_0,
+    PROP_USE_UMAT,
 };
 
 static void gst_remap_get_property(
@@ -330,6 +331,9 @@ static void gst_remap_get_property(
     GstRemap* self = GST_REMAP(object);
 
     switch (prop_id) {
+    case PROP_USE_UMAT:
+        g_value_set_boolean(value, self->use_umat);
+        break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
         break;
@@ -342,6 +346,9 @@ static void gst_remap_set_property(
     GstRemap* self = GST_REMAP(object);
 
     switch (prop_id) {
+    case PROP_USE_UMAT:
+        self->use_umat = g_value_get_boolean(value);
+        break;
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
         break;
@@ -466,6 +473,7 @@ static GstFlowReturn gst_remap_aggregate_frames(
     GList* l;
     GstVideoFrame out_frame, *outframe;
     guint drawn_pads = 0;
+    GstRemap* self = GST_REMAP(vagg);
 
     if (!gst_video_frame_map(&out_frame, &vagg->info, outbuf, GST_MAP_WRITE)) {
         GST_WARNING_OBJECT(vagg, "Could not map output buffer");
@@ -473,27 +481,45 @@ static GstFlowReturn gst_remap_aggregate_frames(
     }
 
     outframe = &out_frame;
-    cv::Mat outmat;
+    cv::Mat outmat, frame;
     _get_mat_from_frame(outframe, outmat);
-    cv::UMat u_outmat = outmat.getUMat(cv::ACCESS_WRITE), u_frame;
-    cv::Mat frame;
-
     GST_OBJECT_LOCK(vagg);
-    for (l = GST_ELEMENT(vagg)->sinkpads; l; l = l->next) {
-        GstVideoAggregatorPad* pad = (GstVideoAggregatorPad*)l->data;
-        GstRemapPad* compo_pad = GST_REMAP_PAD(pad);
-        GstVideoFrame* prepared_frame
-            = gst_video_aggregator_pad_get_prepared_frame(pad);
+    if (self->use_umat) {
+        cv::UMat u_outmat = outmat.getUMat(cv::ACCESS_WRITE), u_frame;
 
-        if (prepared_frame != NULL) {
-            _get_mat_from_frame(prepared_frame, frame);
-            u_frame = frame.getUMat(cv::ACCESS_READ);
-            cv::UMat u_roi(u_outmat,
-                cv::Rect(compo_pad->xpos, compo_pad->ypos, compo_pad->width,
-                    compo_pad->height));
-            cv::remap(u_frame, u_roi, compo_pad->_mapx, compo_pad->_mapy,
-                cv::INTER_LINEAR, cv::BORDER_TRANSPARENT);
-            drawn_pads++;
+        for (l = GST_ELEMENT(vagg)->sinkpads; l; l = l->next) {
+            GstVideoAggregatorPad* pad = (GstVideoAggregatorPad*)l->data;
+            GstRemapPad* compo_pad = GST_REMAP_PAD(pad);
+            GstVideoFrame* prepared_frame
+                = gst_video_aggregator_pad_get_prepared_frame(pad);
+
+            if (prepared_frame != NULL) {
+                _get_mat_from_frame(prepared_frame, frame);
+                u_frame = frame.getUMat(cv::ACCESS_READ);
+                cv::UMat u_roi(u_outmat,
+                    cv::Rect(compo_pad->xpos, compo_pad->ypos,
+                        compo_pad->width, compo_pad->height));
+                cv::remap(u_frame, u_roi, compo_pad->u_mapx, compo_pad->u_mapy,
+                    cv::INTER_LINEAR, cv::BORDER_TRANSPARENT);
+                drawn_pads++;
+            }
+        }
+    } else {
+        for (l = GST_ELEMENT(vagg)->sinkpads; l; l = l->next) {
+            GstVideoAggregatorPad* pad = (GstVideoAggregatorPad*)l->data;
+            GstRemapPad* compo_pad = GST_REMAP_PAD(pad);
+            GstVideoFrame* prepared_frame
+                = gst_video_aggregator_pad_get_prepared_frame(pad);
+
+            if (prepared_frame != NULL) {
+                _get_mat_from_frame(prepared_frame, frame);
+                cv::Mat roi(outmat,
+                    cv::Rect(compo_pad->xpos, compo_pad->ypos,
+                        compo_pad->width, compo_pad->height));
+                cv::remap(frame, roi, compo_pad->_mapx, compo_pad->_mapy,
+                    cv::INTER_LINEAR, cv::BORDER_TRANSPARENT);
+                drawn_pads++;
+            }
         }
     }
     GST_OBJECT_UNLOCK(vagg);
@@ -602,6 +628,12 @@ static void gst_remap_class_init(GstRemapClass* klass)
     agg_class->negotiated_src_caps = _negotiated_caps;
     videoaggregator_class->aggregate_frames = gst_remap_aggregate_frames;
 
+    g_object_class_install_property(gobject_class, PROP_USE_UMAT,
+        g_param_spec_boolean("use-umat", "Use UMats", "Whether to use umat",
+            DEFAULT_USE_UMAT,
+            GParamFlags(G_PARAM_READWRITE | GST_PARAM_CONTROLLABLE
+                | G_PARAM_STATIC_STRINGS)));
+
     gst_element_class_add_static_pad_template_with_gtype(
         gstelement_class, &src_factory, GST_TYPE_AGGREGATOR_PAD);
     gst_element_class_add_static_pad_template_with_gtype(
@@ -609,14 +641,14 @@ static void gst_remap_class_init(GstRemapClass* klass)
 
     gst_element_class_set_static_metadata(gstelement_class, "Remap",
         "Filter/Editor/Video/Remap", "Composite multiple video streams",
-        "Wim Taymans <wim@fluendo.com>, "
-        "Sebastian Dröge <sebastian.droege@collabora.co.uk>");
+        "Vladislav Bortnikov <bortnikov.vladislav@e-sakha.ru>");
 
     gst_type_mark_as_plugin_api(GST_TYPE_REMAP_PAD, GstPluginAPIFlags(0));
 }
 
 static void gst_remap_init(GstRemap* self)
 { /* initialize variables */
+    self->use_umat = FALSE;
 }
 
 /* GstChildProxy implementation */
