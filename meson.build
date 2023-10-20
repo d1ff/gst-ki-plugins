@@ -24,7 +24,7 @@ libopencv4_headers = [
   'opencv4/opencv2/video.hpp',
 ]
 
-opencv_dep = dependency('opencv4', version : ['>= 4.0.0', '< 4.6.0'], required : false)
+opencv_dep = dependency('opencv4', version : ['>= 4.0.0', '< 4.9.0'], required : false)
 opencv_found = opencv_dep.found()
 if opencv_found
   foreach h : libopencv4_headers
@@ -51,7 +51,7 @@ gstvideo_dep = dependency('gstreamer-video-1.0',
 
 compositor_sources = [
   'src/remap.cpp',
-  ]
+]
 
 gstkiplugins = library('gstkiplugins',
   compositor_sources,
